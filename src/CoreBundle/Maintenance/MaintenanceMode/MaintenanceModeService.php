@@ -1,20 +1,10 @@
 <?php
 
-/*
- * This file is part of the Chameleon System (https://www.chameleonsystem.com).
- *
- * (c) ESONO AG (https://www.esono.de)
- *
- * For the full copyright and license information, please view the LICENSE
- * file that was distributed with this source code.
- */
-
-namespace ChameleonSystem\CoreBundle\Maintenance\MaintenanceMode;
+namespace ChameleonSystem\CoreBundle\Service;
 
 use ChameleonSystem\CoreBundle\Exception\MaintenanceModeErrorException;
 use Doctrine\DBAL\Connection;
 use Doctrine\DBAL\DBALException;
-use esono\pkgCmsCache\CacheInterface;
 
 class MaintenanceModeService implements MaintenanceModeServiceInterface
 {
@@ -23,91 +13,56 @@ class MaintenanceModeService implements MaintenanceModeServiceInterface
      */
     private $connection;
 
-    /**
-     * @var CacheInterface
-     */
-    private $cache;
-
-    public function __construct(Connection $connection, CacheInterface $cache)
+    public function __construct(Connection $connection)
     {
         $this->connection = $connection;
-        $this->cache = $cache;
     }
 
-    public function isActive(): bool
+    public function isActivated(): bool
     {
-        if (true === \TdbCmsConfig::GetInstance()->fieldShutdownWebsites) {
-            /*
-             * This location should not have been reached if maintenance mode is on.
-             * The reason could be that the file/stat cache is outdated. So we refresh it here for the next request / the imminent redirect.
-             */
-            clearstatcache(true, PATH_MAINTENANCE_MODE_MARKER);
+        return file_exists(PATH_MAINTENANCE_MODE_MARKER);
+    }
 
-            return true;
+    public function isActivatedInDb(): bool
+    {
+        $col = $this->connection->fetchColumn("SELECT `shutdown_websites` FROM `cms_config`");
+
+        if (false === $col) {
+            return false;
         }
 
-        return false;
+        return '1' === $col['shutdown_websites'];
     }
 
     public function activate(): void
     {
         try {
             $this->connection->executeUpdate("UPDATE `cms_config` SET `shutdown_websites` = '1'");
-
-            $this->cache->callTrigger('cms_config');
         } catch (DBALException $exception) {
-            throw new MaintenanceModeErrorException('Cannot save maintenance mode flag in database.', 0, $exception);
+            throw new MaintenanceModeErrorException('Cannot save maintenance mode flag in database', 0, $exception);
         }
+        
+        $fileSuccess = touch(PATH_MAINTENANCE_MODE_MARKER);
 
-        $this->createMarkerFile();
+        if (false === $fileSuccess) {
+            throw new MaintenanceModeErrorException('Cannot save maintenance mode flag in file system');
+        }
     }
 
     public function deactivate(): void
     {
-        $this->removeMarkerFile();
+        if (true === file_exists(PATH_MAINTENANCE_MODE_MARKER)) {
+            $fileSuccess = unlink(PATH_MAINTENANCE_MODE_MARKER);
 
-        try {
-            $this->connection->executeUpdate("UPDATE `cms_config` SET `shutdown_websites` = '0'");
-
-            $this->cache->callTrigger('cms_config');
-        } catch (DBALException $exception) {
-            throw new MaintenanceModeErrorException('Cannot reset maintenance mode flag in database.', 0, $exception);
-        }
-    }
-
-    /**
-     * @throws MaintenanceModeErrorException
-     */
-    private function createMarkerFile(): void
-    {
-        $markerDir = \dirname(PATH_MAINTENANCE_MODE_MARKER);
-
-        if (false === \is_dir($markerDir)) {
-            if (false === \mkdir($markerDir, 0777, true) && false === \is_dir($markerDir)) {
-                throw new MaintenanceModeErrorException('Cannot create maintenance mode flag directory.');
+            if (false === $fileSuccess) {
+                throw new MaintenanceModeErrorException('Cannot delete maintenance mode flag in file system');
             }
         }
 
-        $fileSuccess = touch(PATH_MAINTENANCE_MODE_MARKER);
-
-        if (false === $fileSuccess) {
-            throw new MaintenanceModeErrorException('Cannot save maintenance mode flag in file system.');
-        }
-    }
-
-    /**
-     * @throws MaintenanceModeErrorException
-     */
-    private function removeMarkerFile(): void
-    {
-        if (false === file_exists(PATH_MAINTENANCE_MODE_MARKER)) {
-            return;
-        }
-
-        $fileSuccess = unlink(PATH_MAINTENANCE_MODE_MARKER);
-
-        if (false === $fileSuccess) {
-            throw new MaintenanceModeErrorException('Cannot delete maintenance mode flag in file system.');
+        try {
+            $this->connection->executeUpdate("UPDATE `cms_config` SET `shutdown_websites` = '0'");
+        } catch (DBALException $exception) {
+            throw new MaintenanceModeErrorException('Cannot reset maintenance mode flag in database', 0, $exception);
         }
     }
 }

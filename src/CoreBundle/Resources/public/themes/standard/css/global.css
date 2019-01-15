@@ -335,6 +335,10 @@ div.grippie {
 #cmsbreadcrumb .breadcrumb {
     border-radius: 0;
 }
+#cmsbreadcrumb .breadcrumb i {
+    color: #098dba;
+}
+
 
 .cmsNavIcon {
     background-position: left center;
@@ -441,6 +445,23 @@ div.grippie {
     border: 1px solid #e4e7ea;
 }
 
+.nav-link-fa {
+    display: block;
+    padding: .5rem 0;
+}
+.nav-link-fa i {
+    color: #098dba;
+    width: 25px;
+}
+
+.nav-link-deprecatedIcon {
+    display: block;
+    padding: .5rem 1rem;
+}
+.nav-link-deprecatedIcon span,
+.nav-link-fa span {
+    padding-left: .5rem;
+}
 /**
 Bootstrap 4 addons.
  */
